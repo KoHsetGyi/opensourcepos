@@ -538,19 +538,43 @@ class Sale extends CI_Model
 			//Run these queries as a transaction, we want to make sure we do all or nothing
 			$this->db->trans_start();
 
-			// first delete all payments
-			$this->db->delete('sales_payments', array('sale_id' => $sale_id));
-
 			// add new payments
 			foreach($payments as $payment)
 			{
-				$sales_payments_data = array(
-					'sale_id' => $sale_id,
-					'payment_type' => $payment['payment_type'],
-					'payment_amount' => $payment['payment_amount']
-				);
+				$payment_id = $payment['payment_id'];
+				$payment_type = $payment['payment_type'];
+				$payment_amount = $payment['payment_amount'];
+				$payment_user = $payment['payment_user'];
 
-				$success = $this->db->insert('sales_payments', $sales_payments_data);
+				if($payment_id == - 1 && $payment_amount > 0)
+				{
+					// Add a new payment transaction
+					$sales_payments_data = array(
+						'sale_id' => $sale_id,
+						'payment_type' => $payment_type,
+						'payment_amount' => $payment_amount,
+						'payment_user' => $payment_user
+					);
+					$success = $this->db->insert('sales_payments', $sales_payments_data);
+				}
+
+				if($payment_id != - 1)
+				{
+					if($payment_amount > 0)
+					{
+						// Update existing payment transactions (payment_type only)
+						$sales_payments_data = array(
+							'payment_type' => $payment_type
+						);
+						$this->db->where('payment_id',$payment_id);
+						$success = $this->db->update('sales_payments', $sales_payments_data);
+					}
+					else
+					{
+						// Remove existing payment transactions  with a payment amount of zero
+						$success = $this->db->delete('sales_payments', array('payment_id' => $payment_id));
+					}
+				}
 			}
 
 			$this->db->trans_complete();
@@ -633,9 +657,12 @@ class Sale extends CI_Model
 			$sales_payments_data = array(
 				'sale_id'		 => $sale_id,
 				'payment_type'	 => $payment['payment_type'],
-				'payment_amount' => $payment['payment_amount']
+				'payment_amount' => $payment['payment_amount'],
+				'payment_user'	 => $employee_id
 			);
+
 			$this->db->insert('sales_payments', $sales_payments_data);
+
 			$total_amount = floatval($total_amount) + floatval($payment['payment_amount']);
 		}
 
@@ -730,7 +757,6 @@ class Sale extends CI_Model
 	{
 		foreach($sales_taxes as $line=>$sales_tax)
 		{
-			$sales_tax['tax_group'] = (float)$sales_tax['tax_rate'] . '% ' . $sales_tax['tax_group'];
 			$sales_tax['sale_id'] = $sale_id;
 			$this->db->insert('sales_taxes', $sales_tax);
 		}
@@ -803,7 +829,7 @@ class Sale extends CI_Model
 	{
 		foreach($sale_ids as $sale_id)
 		{
-            $this->update_sale_status($sale_id, SUSPENDED);
+			$this->update_sale_status($sale_id, SUSPENDED);
 		}
 
 		return TRUE;
@@ -1254,7 +1280,7 @@ class Sale extends CI_Model
 
 	/**
 	 * Gets the quote_number for the selected sale
- 	 */
+	 */
 	public function get_quote_number($sale_id)
 	{
 		$this->db->from('sales');
